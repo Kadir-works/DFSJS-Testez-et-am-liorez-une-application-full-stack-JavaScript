@@ -1,0 +1,9 @@
+import { NextFunction, Request, Response, RequestHandler } from 'express';
+
+export function asyncHandler(
+  handler: (req: Request, res: Response, next: NextFunction) => Promise<unknown>,
+): RequestHandler {
+  return (req, res, next): void => {
+    void handler(req, res, next).catch(next);
+  };
+}
