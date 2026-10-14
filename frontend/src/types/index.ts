@@ -36,6 +36,11 @@ export interface AuthResponse {
   token: string;
 }
 
+export interface UserProfile extends User {
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface LoginCredentials {
   email: string;
   password: string;

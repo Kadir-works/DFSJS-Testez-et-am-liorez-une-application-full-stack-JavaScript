@@ -1,23 +1,23 @@
-import { useState, useEffect } from 'react';
+import { ChangeEvent, FormEvent, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import api from '../services/api';
+import api, { isRequestCanceled } from '../services/api';
 import { authService } from '../services/auth.service';
-import { Teacher, Session } from '../types';
+import { Session, SessionFormData, Teacher } from '../types';
 
-function SessionForm() {
+function SessionForm(): React.ReactNode {
   const navigate = useNavigate();
   const { id } = useParams();
   const isEditMode = !!id;
 
-  const [formData, setFormData] = useState<any>({
+  const [formData, setFormData] = useState<SessionFormData>({
     name: '',
     date: '',
     description: '',
-    teacherId: '',
+    teacherId: 0,
   });
-  const [teachers, setTeachers] = useState<any>([]);
-  const [loading, setLoading] = useState<any>(false);
-  const [error, setError] = useState<any>('');
+  const [teachers, setTeachers] = useState<Teacher[]>([]);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string>('');
   const user = authService.getCurrentUser();
   const token = authService.getToken();
 
@@ -26,34 +26,43 @@ function SessionForm() {
     if (!user || !user.admin) {
       navigate('/sessions');
     }
-  }, [user, navigate]);
+  }, [user?.id, user?.admin, navigate]);
 
   useEffect(() => {
-    fetchTeachers();
+    const controller = new AbortController();
+    fetchTeachers(controller.signal);
     if (isEditMode) {
-      fetchSession();
+      fetchSession(controller.signal);
     }
+
+    return (): void => {
+      controller.abort();
+    };
   }, [id]);
 
-  const fetchTeachers = async (): Promise<any> => {
+  const fetchTeachers = async (signal: AbortSignal): Promise<void> => {
     try {
       const response = await api.get<Teacher[]>('/teacher', {
         headers: {
           Authorization: `Bearer ${token}`,
         },
+        signal,
       });
       setTeachers(response.data);
-    } catch (err: any) {
-      console.error('Failed to fetch teachers', err);
+    } catch (error: unknown) {
+      if (!isRequestCanceled(error)) {
+        console.error('Failed to fetch teachers', error);
+      }
     }
   };
 
-  const fetchSession = async (): Promise<any> => {
+  const fetchSession = async (signal: AbortSignal): Promise<void> => {
     try {
       const response = await api.get<Session>(`/session/${id}`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
+        signal,
       });
       const session = response.data;
       setFormData({
@@ -62,13 +71,15 @@ function SessionForm() {
         description: session.description,
         teacherId: session.teacher.id,
       });
-    } catch (err: any) {
-      setError('Failed to load session');
-      console.error(err);
+    } catch (error: unknown) {
+      if (!isRequestCanceled(error)) {
+        setError('Failed to load session');
+        console.error(error);
+      }
     }
   };
 
-  const handleChange = (e: any): any => {
+  const handleChange = (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>): void => {
     const value =
       e.target.name === 'teacherId' ? parseInt(e.target.value) : e.target.value;
     setFormData({
@@ -77,7 +88,7 @@ function SessionForm() {
     });
   };
 
-  const handleSubmit = async (e: any): Promise<any> => {
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>): Promise<void> => {
     e.preventDefault();
     setError('');
     setLoading(true);
@@ -97,8 +108,9 @@ function SessionForm() {
         });
       }
       navigate('/sessions');
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to save session');
+    } catch (error: unknown) {
+      setError('Failed to save session');
+      console.error(error);
     } finally {
       setLoading(false);
     }
@@ -159,7 +171,7 @@ function SessionForm() {
                 required
               >
                 <option value="">Select a teacher</option>
-                {teachers.map((teacher: any) => (
+                {teachers.map((teacher: Teacher) => (
                   <option key={teacher.id} value={teacher.id}>
                     {teacher.firstName} {teacher.lastName}
                   </option>

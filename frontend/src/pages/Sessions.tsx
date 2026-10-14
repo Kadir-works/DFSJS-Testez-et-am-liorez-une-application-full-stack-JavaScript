@@ -1,38 +1,46 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import api from '../services/api';
+import api, { isRequestCanceled } from '../services/api';
 import { authService } from '../services/auth.service';
 import { Session } from '../types';
 
-function Sessions() {
-  const [sessions, setSessions] = useState<any>([]);
-  const [loading, setLoading] = useState<any>(true);
-  const [error, setError] = useState<any>('');
+function Sessions(): React.ReactNode {
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string>('');
   const user = authService.getCurrentUser();
   const token = authService.getToken();
 
   useEffect(() => {
-    fetchSessions();
+    const controller = new AbortController();
+    fetchSessions(controller.signal);
+
+    return (): void => {
+      controller.abort();
+    };
   }, []);
 
-  const fetchSessions = async (): Promise<any> => {
+  const fetchSessions = async (signal: AbortSignal): Promise<void> => {
     try {
       setLoading(true);
       const response = await api.get<Session[]>('/session', {
         headers: {
           Authorization: `Bearer ${token}`,
         },
+        signal,
       });
       setSessions(response.data);
-    } catch (err: any) {
-      setError('Failed to load sessions');
-      console.error(err);
+    } catch (error: unknown) {
+      if (!isRequestCanceled(error)) {
+        setError('Failed to load sessions');
+        console.error(error);
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  const handleDelete = async (sessionId: any): Promise<any> => {
+  const handleDelete = async (sessionId: number): Promise<void> => {
     if (!window.confirm('Are you sure you want to delete this session?')) {
       return;
     }
@@ -43,10 +51,10 @@ function Sessions() {
           Authorization: `Bearer ${token}`,
         },
       });
-      fetchSessions();
-    } catch (err: any) {
+      await fetchSessions(new AbortController().signal);
+    } catch (error: unknown) {
       alert('Failed to delete session');
-      console.error(err);
+      console.error(error);
     }
   };
 
@@ -89,7 +97,7 @@ function Sessions() {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {sessions.map((session: any) => (
+            {sessions.map((session: Session) => (
               <div key={session.id} className="bg-white rounded-lg shadow-md p-6">
                 <h3 className="text-xl font-bold text-gray-800 mb-2">
                   {session.name}

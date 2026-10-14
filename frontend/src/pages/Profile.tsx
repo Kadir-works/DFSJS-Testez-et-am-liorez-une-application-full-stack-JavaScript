@@ -1,43 +1,63 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import api from '../services/api';
+import api, { getApiErrorMessage, isRequestCanceled } from '../services/api';
 import { authService } from '../services/auth.service';
+import { UserProfile } from '../types';
 
-function Profile() {
+function Profile(): React.ReactNode {
   const navigate = useNavigate();
-  const [userInfo, setUserInfo] = useState<any>(null);
-  const [loading, setLoading] = useState<any>(true);
-  const [error, setError] = useState<any>('');
-  const [promoteLoading, setPromoteLoading] = useState<any>(false);
-  const [promoteError, setPromoteError] = useState<any>('');
+  const [userInfo, setUserInfo] = useState<UserProfile | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string>('');
+  const [promoteLoading, setPromoteLoading] = useState<boolean>(false);
+  const [promoteError, setPromoteError] = useState<string>('');
   const user = authService.getCurrentUser();
   const token = authService.getToken();
-  const isDev = (import.meta as any).env?.DEV === true;
+  const isDev = Boolean((import.meta as ImportMeta & { env?: { DEV?: boolean } }).env?.DEV);
 
   useEffect(() => {
-    if (user) {
-      fetchUserInfo();
+    if (!user) {
+      setLoading(false);
+      return;
     }
-  }, []);
 
-  const fetchUserInfo = async (): Promise<any> => {
+    const controller = new AbortController();
+    fetchUserInfo(controller.signal);
+
+    return (): void => {
+      controller.abort();
+    };
+  }, [user?.id, token]);
+
+  const fetchUserInfo = async (signal: AbortSignal): Promise<void> => {
+    if (!user) {
+      return;
+    }
+
     try {
       setLoading(true);
-      const response = await api.get(`/user/${user.id}`, {
+      const response = await api.get<UserProfile>(`/user/${user.id}`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
+        signal,
       });
       setUserInfo(response.data);
-    } catch (err: any) {
-      setError('Failed to load user information');
-      console.error(err);
+    } catch (error: unknown) {
+      if (!isRequestCanceled(error)) {
+        setError(getApiErrorMessage(error, 'Failed to load user information'));
+        console.error(error);
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  const handleDeleteAccount = async (): Promise<any> => {
+  const handleDeleteAccount = async (): Promise<void> => {
+    if (!user) {
+      return;
+    }
+
     if (!window.confirm('Are you sure you want to delete your account? This action cannot be undone.')) {
       return;
     }
@@ -50,17 +70,17 @@ function Profile() {
       });
       authService.logout();
       navigate('/login');
-    } catch (err: any) {
+    } catch (error: unknown) {
       alert('Failed to delete account');
-      console.error(err);
+      console.error(error);
     }
   };
 
-  const handlePromoteAdmin = async (): Promise<any> => {
+  const handlePromoteAdmin = async (): Promise<void> => {
     try {
       setPromoteError('');
       setPromoteLoading(true);
-      const response = await api.post(
+      const response = await api.post<UserProfile>(
         '/user/promote-admin',
         {},
         {
@@ -71,9 +91,9 @@ function Profile() {
       );
       setUserInfo(response.data);
       authService.updateCurrentUser({ admin: response.data.admin });
-    } catch (err: any) {
-      setPromoteError('Failed to promote to admin');
-      console.error(err);
+    } catch (error: unknown) {
+      setPromoteError(getApiErrorMessage(error, 'Failed to promote to admin'));
+      console.error(error);
     } finally {
       setPromoteLoading(false);
     }
